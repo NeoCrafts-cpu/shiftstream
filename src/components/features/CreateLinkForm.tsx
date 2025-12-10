@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Link,
@@ -14,6 +14,9 @@ import {
   Plus,
   Check,
   Trash2,
+  Search,
+  Loader2,
+  ChevronDown,
 } from 'lucide-react';
 import {
   Button,
@@ -28,17 +31,22 @@ import {
 } from '@/components/ui';
 import { useStore } from '@/lib/store';
 import { sideShiftClient } from '@/lib/sideshift';
-import { SUPPORTED_DEPOSIT_COINS, LINK_TYPES } from '@/lib/constants';
+import { LINK_TYPES } from '@/lib/constants';
+import { useSideShiftCoinsQuick } from '@/lib/hooks';
 import type { SmartLink, SplitRecipient, EscrowCondition } from '@/lib/types';
 import { generateId } from '@/lib/utils';
 
 export function CreateLinkForm() {
   const { smartAccount, addSmartLink, addToast, addAgentLog, modalOpen, setModalOpen } = useStore();
+  const { coins, loading: coinsLoading } = useSideShiftCoinsQuick();
+  
   const [linkType, setLinkType] = useState<string>(LINK_TYPES.SIMPLE);
   const [depositCoin, setDepositCoin] = useState('BTC');
   const [depositNetwork, setDepositNetwork] = useState('bitcoin');
   const [expectedAmount, setExpectedAmount] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [coinSearch, setCoinSearch] = useState('');
+  const [showCoinDropdown, setShowCoinDropdown] = useState(false);
 
   // Escrow state
   const [trackingNumber, setTrackingNumber] = useState('');
@@ -50,12 +58,34 @@ export function CreateLinkForm() {
     { address: '' as `0x${string}`, percentage: 50, label: 'Recipient 2' },
   ]);
 
-  const handleCoinChange = (coin: string) => {
-    const selectedCoin = SUPPORTED_DEPOSIT_COINS.find((c) => c.symbol === coin);
-    if (selectedCoin) {
-      setDepositCoin(selectedCoin.symbol);
-      setDepositNetwork(selectedCoin.network);
-    }
+  // Filter coins based on search
+  const filteredCoins = useMemo(() => {
+    if (!coinSearch) return coins;
+    const search = coinSearch.toLowerCase();
+    return coins.filter(
+      (c) =>
+        c.symbol.toLowerCase().includes(search) ||
+        c.name.toLowerCase().includes(search) ||
+        c.networkName.toLowerCase().includes(search)
+    );
+  }, [coins, coinSearch]);
+
+  // Get selected coin display info
+  const selectedCoin = useMemo(() => {
+    return coins.find((c) => c.symbol === depositCoin && c.network === depositNetwork) || {
+      symbol: depositCoin,
+      name: depositCoin,
+      network: depositNetwork,
+      networkName: depositNetwork,
+      icon: '●',
+    };
+  }, [coins, depositCoin, depositNetwork]);
+
+  const handleCoinSelect = (symbol: string, network: string) => {
+    setDepositCoin(symbol);
+    setDepositNetwork(network);
+    setShowCoinDropdown(false);
+    setCoinSearch('');
   };
 
   const handleAddRecipient = () => {
@@ -254,17 +284,98 @@ export function CreateLinkForm() {
             </div>
           </div>
 
-          {/* Deposit Coin Selection */}
-          <Select
-            label="Accept Payment In"
-            value={depositCoin}
-            onChange={(e) => handleCoinChange(e.target.value)}
-            options={SUPPORTED_DEPOSIT_COINS.map((c) => ({
-              value: c.symbol,
-              label: `${c.name} (${c.symbol})`,
-              icon: c.icon,
-            }))}
-          />
+          {/* Deposit Coin Selection - Searchable Dropdown */}
+          <div className="relative">
+            <label className="block text-sm font-medium text-white/80 mb-2">
+              Accept Payment In
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowCoinDropdown(!showCoinDropdown)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white hover:border-white/20 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-xl">{selectedCoin.icon}</span>
+                <div className="text-left">
+                  <p className="font-medium">{selectedCoin.symbol}</p>
+                  <p className="text-xs text-white/50">{selectedCoin.name} on {selectedCoin.networkName}</p>
+                </div>
+              </div>
+              <ChevronDown className={`w-5 h-5 text-white/50 transition-transform ${showCoinDropdown ? 'rotate-180' : ''}`} />
+            </button>
+
+            <AnimatePresence>
+              {showCoinDropdown && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="absolute z-50 w-full mt-2 bg-gray-900 border border-white/10 rounded-xl shadow-xl overflow-hidden"
+                >
+                  {/* Search Input */}
+                  <div className="p-3 border-b border-white/10">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                      <input
+                        type="text"
+                        placeholder="Search coins..."
+                        value={coinSearch}
+                        onChange={(e) => setCoinSearch(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-violet-500/50"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  {/* Coins List */}
+                  <div className="max-h-64 overflow-y-auto">
+                    {coinsLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 text-violet-400 animate-spin" />
+                        <span className="ml-2 text-white/60">Loading coins...</span>
+                      </div>
+                    ) : filteredCoins.length === 0 ? (
+                      <div className="py-8 text-center text-white/40">
+                        No coins found for "{coinSearch}"
+                      </div>
+                    ) : (
+                      filteredCoins.map((coin, index) => (
+                        <button
+                          key={`${coin.symbol}-${coin.network}-${index}`}
+                          type="button"
+                          onClick={() => handleCoinSelect(coin.symbol, coin.network)}
+                          className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors ${
+                            coin.symbol === depositCoin && coin.network === depositNetwork
+                              ? 'bg-violet-500/10 border-l-2 border-violet-500'
+                              : ''
+                          }`}
+                        >
+                          <span className="text-xl w-8 text-center">{coin.icon}</span>
+                          <div className="text-left flex-1">
+                            <p className="font-medium text-white">{coin.symbol}</p>
+                            <p className="text-xs text-white/50">{coin.name}</p>
+                          </div>
+                          <Badge variant="default" className="text-xs">
+                            {coin.networkName}
+                          </Badge>
+                          {coin.symbol === depositCoin && coin.network === depositNetwork && (
+                            <Check className="w-4 h-4 text-violet-400" />
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Footer with count */}
+                  <div className="px-4 py-2 border-t border-white/10 bg-white/5">
+                    <p className="text-xs text-white/40">
+                      {coins.length} coins available across all networks
+                    </p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
           {/* Expected Amount (Optional) */}
           <Input
