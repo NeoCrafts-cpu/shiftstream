@@ -1,9 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-import { ArrowLeft, Zap, Bot, Settings, LogOut } from 'lucide-react';
-import { Button, ToastContainer, LogoLink } from '@/components/ui';
+import { ArrowLeft, Zap, Bot, Settings, LogOut, Link2, History } from 'lucide-react';
+import { Button, ToastContainer, LogoLink, Badge } from '@/components/ui';
 import {
   SmartAccountCard,
   CreateLinkForm,
@@ -14,8 +15,11 @@ import {
 import { useStore } from '@/lib/store';
 import { zeroDevClient } from '@/lib/zerodev';
 
+type TabType = 'links' | 'history';
+
 export default function DashboardPage() {
-  const { smartAccount, setSmartAccount, addToast } = useStore();
+  const { smartAccount, setSmartAccount, addToast, smartLinks } = useStore();
+  const [activeTab, setActiveTab] = useState<TabType>('links');
 
   const handleDisconnect = () => {
     zeroDevClient.clearStorage();
@@ -26,6 +30,11 @@ export default function DashboardPage() {
       description: 'Your session has been cleared',
     });
   };
+
+  const tabs = [
+    { id: 'links' as TabType, label: 'Smart Links', icon: Link2, count: smartLinks.length },
+    { id: 'history' as TabType, label: 'Transaction History', icon: History },
+  ];
 
   return (
     <div className="min-h-screen bg-slate-950">
@@ -81,11 +90,51 @@ export default function DashboardPage() {
             {/* Smart Account Card */}
             <SmartAccountCard />
 
-            {/* Smart Links List */}
-            <SmartLinksList />
+            {/* Tabs */}
+            <div className="flex items-center gap-2 border-b border-white/10 pb-1">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <motion.button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl font-medium text-sm transition-all relative ${
+                      isActive
+                        ? 'text-white bg-white/5'
+                        : 'text-white/50 hover:text-white/80 hover:bg-white/5'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {tab.label}
+                    {tab.count !== undefined && tab.count > 0 && (
+                      <Badge variant="default" className="ml-1 text-xs px-1.5 py-0.5">
+                        {tab.count}
+                      </Badge>
+                    )}
+                    {isActive && (
+                      <motion.div
+                        layoutId="activeTab"
+                        className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-violet-500 to-purple-500"
+                      />
+                    )}
+                  </motion.button>
+                );
+              })}
+            </div>
 
-            {/* Transaction History */}
-            <TransactionHistory />
+            {/* Tab Content */}
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              {activeTab === 'links' && <SmartLinksList />}
+              {activeTab === 'history' && <TransactionHistory />}
+            </motion.div>
           </div>
 
           {/* Right Column - Agent Panel */}
