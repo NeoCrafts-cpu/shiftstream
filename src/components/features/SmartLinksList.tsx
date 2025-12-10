@@ -40,6 +40,7 @@ export function SmartLinksList() {
     const activeLinks = smartLinks.filter(
       (link) =>
         link.shiftId &&
+        link.shiftId.length > 0 &&
         !['completed', 'failed', 'refunded'].includes(link.status)
     );
 
@@ -47,7 +48,7 @@ export function SmartLinksList() {
 
     const pollInterval = setInterval(async () => {
       for (const link of activeLinks) {
-        if (!link.shiftId) continue;
+        if (!link.shiftId || link.shiftId.length === 0) continue;
 
         try {
           const shift = await sideShiftClient.getShift(link.shiftId);

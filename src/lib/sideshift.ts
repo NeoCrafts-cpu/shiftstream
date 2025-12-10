@@ -108,6 +108,10 @@ export class SideShiftClient {
    * Get shift status by ID via server-side API route
    */
   async getShift(shiftId: string): Promise<SideShiftShift> {
+    if (!shiftId || shiftId.length === 0) {
+      throw new Error('Shift ID is required');
+    }
+
     const response = await fetch(`/api/shift?id=${shiftId}`);
 
     if (!response.ok) {
