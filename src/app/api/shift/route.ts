@@ -30,7 +30,8 @@ export async function POST(req: Request) {
       params.affiliateId = affiliateId;
     }
 
-    const response = await fetch(`${SIDESHIFT_API_BASE}/shifts/variable`, {
+    // Try with secret key first, then without if blocked
+    let response = await fetch(`${SIDESHIFT_API_BASE}/shifts/variable`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -39,12 +40,24 @@ export async function POST(req: Request) {
       body: JSON.stringify(params),
     });
 
+    // If access denied (IP blocked), return special code so client can try directly
+    if (response.status === 403) {
+      return NextResponse.json(
+        { 
+          error: 'Server blocked by SideShift', 
+          useClientSide: true,
+          params 
+        },
+        { status: 403 }
+      );
+    }
+
     const data = await response.json();
 
     if (!response.ok) {
       console.error('SideShift API error:', data);
       return NextResponse.json(
-        { error: data.error?.message || 'Failed to create shift' },
+        { error: data.error?.message || data.error || 'Failed to create shift' },
         { status: response.status }
       );
     }

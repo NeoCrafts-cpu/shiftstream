@@ -43,8 +43,8 @@ export class SideShiftClient {
   }
 
   /**
-   * Create a variable rate shift via server-side API route
-   * This avoids CORS issues and keeps the secret key secure
+   * Create a variable rate shift
+   * First tries server-side, falls back to direct API if server is blocked
    */
   async createVariableShift(
     depositCoin: string,
@@ -52,6 +52,7 @@ export class SideShiftClient {
     settleAddress: string,
     refundAddress?: string
   ): Promise<SideShiftShift> {
+    // Try server-side first
     const response = await fetch('/api/shift', {
       method: 'POST',
       headers: {
@@ -65,9 +66,57 @@ export class SideShiftClient {
       }),
     });
 
+    const data = await response.json();
+
+    // If server is blocked by SideShift, call directly from browser
+    if (response.status === 403 && data.useClientSide) {
+      console.log('Server blocked by SideShift, using client-side API...');
+      return this.createVariableShiftDirect(depositCoin, depositNetwork, settleAddress, refundAddress);
+    }
+
+    if (!response.ok) {
+      throw new Error(data.error?.message || data.error || 'Failed to create shift');
+    }
+
+    return data;
+  }
+
+  /**
+   * Create shift directly from browser (bypasses server IP block)
+   */
+  private async createVariableShiftDirect(
+    depositCoin: string,
+    depositNetwork: string,
+    settleAddress: string,
+    refundAddress?: string
+  ): Promise<SideShiftShift> {
+    const params: Record<string, string> = {
+      depositCoin,
+      depositNetwork,
+      settleCoin: SETTLE_COIN,
+      settleNetwork: SETTLE_NETWORK,
+      settleAddress,
+    };
+
+    if (this.affiliateId) {
+      params.affiliateId = this.affiliateId;
+    }
+
+    if (refundAddress) {
+      params.refundAddress = refundAddress;
+    }
+
+    const response = await fetch(`${this.baseUrl}/shifts/variable`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params),
+    });
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error?.message || 'Failed to create shift');
+      throw new Error(error.error?.message || error.error || 'Failed to create shift');
     }
 
     return response.json();
@@ -105,18 +154,39 @@ export class SideShiftClient {
   }
 
   /**
-   * Get shift status by ID via server-side API route
+   * Get shift status by ID
+   * First tries server-side, falls back to direct API if blocked
    */
   async getShift(shiftId: string): Promise<SideShiftShift> {
     if (!shiftId || shiftId.length === 0) {
       throw new Error('Shift ID is required');
     }
 
+    // Try server-side first
     const response = await fetch(`/api/shift?id=${shiftId}`);
+    const data = await response.json();
+
+    // If server is blocked, call SideShift directly
+    if (response.status === 403) {
+      return this.getShiftDirect(shiftId);
+    }
+
+    if (!response.ok) {
+      throw new Error(data.error?.message || data.error || 'Failed to fetch shift');
+    }
+
+    return data;
+  }
+
+  /**
+   * Get shift directly from SideShift API (bypasses server IP block)
+   */
+  private async getShiftDirect(shiftId: string): Promise<SideShiftShift> {
+    const response = await fetch(`${this.baseUrl}/shifts/${shiftId}`);
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error?.message || 'Failed to fetch shift');
+      throw new Error(error.error?.message || error.error || 'Failed to fetch shift');
     }
 
     return response.json();
