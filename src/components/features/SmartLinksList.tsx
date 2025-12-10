@@ -15,6 +15,8 @@ import {
   RefreshCw,
   AlertCircle,
   Share2,
+  QrCode,
+  X,
 } from 'lucide-react';
 import {
   Card,
@@ -25,7 +27,9 @@ import {
   Button,
   CopyableAddress,
   Skeleton,
+  Modal,
 } from '@/components/ui';
+import { QRCodeDisplay } from '@/components/ui/QRCode';
 import { useStore } from '@/lib/store';
 import { sideShiftClient } from '@/lib/sideshift';
 import { formatDate, getStatusColor, formatAmount, shortenAddress, copyToClipboard } from '@/lib/utils';
@@ -156,6 +160,7 @@ export function SmartLinksList() {
 
 function SmartLinkCard({ link, index }: { link: SmartLink; index: number }) {
   const [copied, setCopied] = useState(false);
+  const [showQR, setShowQR] = useState(false);
   const { addToast } = useStore();
   
   // Generate the payment link URL
@@ -301,28 +306,61 @@ function SmartLinkCard({ link, index }: { link: SmartLink; index: number }) {
                     Payment Link
                   </span>
                 </div>
-                <button
-                  onClick={handleCopyLink}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-xs font-medium transition-colors"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="w-3 h-3" />
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3" />
-                      Copy Link
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowQR(true)}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-xs font-medium transition-colors"
+                  >
+                    <QrCode className="w-3 h-3" />
+                    QR Code
+                  </button>
+                  <button
+                    onClick={handleCopyLink}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 text-xs font-medium transition-colors"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-3 h-3" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        Copy Link
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
               <p className="text-xs text-white/60 font-mono truncate">
                 {typeof window !== 'undefined' ? `${window.location.origin}/pay?id=${link.shiftId}` : `/pay?id=${link.shiftId}`}
               </p>
             </div>
           )}
+
+          {/* QR Code Modal */}
+          <Modal
+            isOpen={showQR}
+            onClose={() => setShowQR(false)}
+            title="Payment QR Code"
+            description={`Scan to pay with ${link.depositCoin}`}
+            size="sm"
+          >
+            <div className="flex flex-col items-center py-4">
+              <QRCodeDisplay
+                value={link.depositAddress || getPaymentLink()}
+                size={220}
+                title={`Send ${link.depositCoin}`}
+                subtitle={link.depositAddress ? 'Scan to get deposit address' : 'Scan to open payment page'}
+              />
+              {link.depositAddress && (
+                <div className="mt-4 p-3 bg-white/5 rounded-xl w-full">
+                  <p className="text-xs text-white/40 mb-1">Deposit Address</p>
+                  <p className="text-sm font-mono text-white break-all">{link.depositAddress}</p>
+                </div>
+              )}
+            </div>
+          </Modal>
 
           {/* Amount Info */}
           <div className="grid grid-cols-2 gap-4 mb-4">

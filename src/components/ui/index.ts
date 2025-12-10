@@ -9,3 +9,4 @@ export { CopyableAddress, QRCodeDisplay, AmountDisplay, ProgressBar, CountdownTi
 export { StepIndicator, FlowStepper } from './Stepper';
 export { CryptoIcon, CoinSelector, NetworkBadge } from './Crypto';
 export { Logo, LogoLink } from './Logo';
+export { QRCodeDisplay as QRCode } from './QRCode';

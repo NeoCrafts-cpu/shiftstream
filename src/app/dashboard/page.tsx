@@ -9,6 +9,7 @@ import {
   CreateLinkForm,
   SmartLinksList,
   AgentLogsPanel,
+  TransactionHistory,
 } from '@/components/features';
 import { useStore } from '@/lib/store';
 import { zeroDevClient } from '@/lib/zerodev';
@@ -82,6 +83,9 @@ export default function DashboardPage() {
 
             {/* Smart Links List */}
             <SmartLinksList />
+
+            {/* Transaction History */}
+            <TransactionHistory />
           </div>
 
           {/* Right Column - Agent Panel */}

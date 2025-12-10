@@ -31,8 +31,9 @@ import {
 } from '@/components/ui';
 import { useStore } from '@/lib/store';
 import { sideShiftClient } from '@/lib/sideshift';
-import { LINK_TYPES } from '@/lib/constants';
+import { LINK_TYPES, SETTLE_COIN, SETTLE_NETWORK } from '@/lib/constants';
 import { useSideShiftCoinsQuick } from '@/lib/hooks';
+import { SettlementSelector, type SettleOption } from './SettlementSelector';
 import type { SmartLink, SplitRecipient, EscrowCondition } from '@/lib/types';
 import { generateId } from '@/lib/utils';
 
@@ -43,6 +44,12 @@ export function CreateLinkForm() {
   const [linkType, setLinkType] = useState<string>(LINK_TYPES.SIMPLE);
   const [depositCoin, setDepositCoin] = useState('BTC');
   const [depositNetwork, setDepositNetwork] = useState('bitcoin');
+  const [settleOption, setSettleOption] = useState<SettleOption>({
+    coin: SETTLE_COIN,
+    network: SETTLE_NETWORK,
+    networkName: 'Base',
+    icon: '🔵',
+  });
   const [expectedAmount, setExpectedAmount] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [coinSearch, setCoinSearch] = useState('');
@@ -376,6 +383,12 @@ export function CreateLinkForm() {
               )}
             </AnimatePresence>
           </div>
+
+          {/* Settlement Option Selector */}
+          <SettlementSelector
+            value={settleOption}
+            onChange={setSettleOption}
+          />
 
           {/* Expected Amount (Optional) */}
           <Input
