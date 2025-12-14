@@ -1,8 +1,9 @@
 import { groq } from '@ai-sdk/groq';
-import { streamText } from 'ai';
+import { generateText } from 'ai';
 import { z } from 'zod';
+import { NextResponse } from 'next/server';
 
-// Allow streaming responses up to 30 seconds
+// Allow responses up to 30 seconds
 export const maxDuration = 30;
 
 // Link types for auto-release logic
@@ -113,11 +114,12 @@ function getSmartLinkData(linkId: string): {
 }
 
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  try {
+    const { messages } = await req.json();
 
-  const result = streamText({
-    model: groq('llama-3.3-70b-versatile'),
-    system: `You are the ShiftStream Auto-Settlement Agent. Your job is to:
+    const result = await generateText({
+      model: groq('llama-3.3-70b-versatile'),
+      system: `You are the ShiftStream Auto-Settlement Agent. Your job is to:
 1. Monitor SideShift deposits and provide status updates
 2. Verify delivery conditions for escrow releases
 3. Help users understand their Smart Link status
@@ -261,7 +263,35 @@ When funds are auto-released for a simple swap, confirm: "✅ Funds auto-release
     },
   });
 
-  return result.toTextStreamResponse();
+  // Combine text and tool results into a response
+  let responseText = result.text || '';
+  
+  // If there are tool results, include them in the response
+  if (result.toolResults && result.toolResults.length > 0) {
+    const toolOutputs = result.toolResults.map((tr) => {
+      // Access the result property safely
+      const toolResult = (tr as unknown as { result: Record<string, unknown> }).result;
+      if (toolResult && typeof toolResult === 'object' && 'message' in toolResult) {
+        return toolResult.message as string;
+      }
+      return JSON.stringify(toolResult, null, 2);
+    }).join('\n\n');
+    
+    if (!responseText) {
+      responseText = toolOutputs;
+    } else {
+      responseText = `${responseText}\n\n${toolOutputs}`;
+    }
+  }
+
+  return NextResponse.json({ response: responseText || 'I processed your request but have no additional information to share.' });
+  } catch (error) {
+    console.error('Agent error:', error);
+    return NextResponse.json(
+      { response: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}` },
+      { status: 500 }
+    );
+  }
 }
 
 function getStatusExplanation(status: string): string {

@@ -63,39 +63,25 @@ export function AgentLogsPanel() {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to get response');
+        const errorData = await response.json().catch(() => ({ response: 'Failed to get response' }));
+        throw new Error(errorData.response || 'Failed to get response');
       }
       
-      // Read streaming response
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let fullText = '';
-      
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          fullText += decoder.decode(value, { stream: true });
-        }
-      } else {
-        fullText = await response.text();
-      }
-      
-      // Clean up the response text (remove any streaming artifacts)
-      const cleanText = fullText.trim();
+      // Parse JSON response
+      const data = await response.json();
+      const responseText = data.response || 'I processed your request.';
       
       const assistantMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: cleanText || 'I processed your request.',
+        content: responseText,
       };
       
       setMessages(prev => [...prev, assistantMessage]);
       
       addAgentLog({
         type: 'success',
-        message: `✨ ${cleanText.slice(0, 100)}${cleanText.length > 100 ? '...' : ''}`,
+        message: `✨ ${responseText.slice(0, 100)}${responseText.length > 100 ? '...' : ''}`,
       });
     } catch (error) {
       addAgentLog({
