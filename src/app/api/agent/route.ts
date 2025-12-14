@@ -99,6 +99,10 @@ function getSmartLinks(): Array<{
   ];
 }
 
+// Track verified conditions (in production, this would be in database)
+const verifiedConditions: Record<string, boolean> = {};
+const receivedDeposits: Record<string, boolean> = {};
+
 // Parse user intent and execute actions
 function processRequest(userMessage: string): string {
   const lowerMessage = userMessage.toLowerCase();
@@ -107,11 +111,15 @@ function processRequest(userMessage: string): string {
   if (lowerMessage.includes('delivery') || lowerMessage.includes('tracking') || lowerMessage.includes('check')) {
     const trackingMatch = userMessage.match(/[A-Z]{2,}[0-9]+/i);
     if (trackingMatch) {
-      const result = checkDeliveryStatus(trackingMatch[0]);
+      const trackingNumber = trackingMatch[0].toUpperCase();
+      const result = checkDeliveryStatus(trackingNumber);
+      
       if (result.status === 'DELIVERED') {
-        return `📦 **Delivery Verified!**\n\n${result.details}\n\n✅ Escrow release condition has been met. The funds can now be released to the recipient.\n\nWould you like me to release the escrowed funds?`;
+        // Mark condition as verified
+        verifiedConditions[trackingNumber] = true;
+        return `📦 **Delivery Verified!**\n\n${result.details}\n\n✅ Escrow condition verified and recorded.\n\n⚠️ **Note:** Before I can release funds, a deposit must be received first. Current escrow status: **Awaiting Deposit**\n\nOnce the payer sends funds and SideShift confirms the deposit, I can release the escrow.`;
       } else if (result.status === 'IN_TRANSIT') {
-        return `📦 **Package In Transit**\n\n${result.details}\n\n⏳ Escrow funds will remain locked until delivery is confirmed.`;
+        return `📦 **Package In Transit**\n\n${result.details}\n\n⏳ Escrow funds will remain locked until delivery is confirmed. I cannot release funds yet.`;
       } else {
         return `❌ **Tracking Not Found**\n\n${result.details}\n\nPlease verify the tracking number and try again.`;
       }
@@ -119,10 +127,17 @@ function processRequest(userMessage: string): string {
   }
   
   // Check shift/payment status
-  if (lowerMessage.includes('shift') || lowerMessage.includes('status') || lowerMessage.includes('payment')) {
+  if (lowerMessage.includes('shift') || lowerMessage.includes('status')) {
     const shiftMatch = userMessage.match(/[a-z]+[0-9]+/i);
     if (shiftMatch) {
-      const result = checkShiftStatus(shiftMatch[0]);
+      const shiftId = shiftMatch[0].toLowerCase();
+      const result = checkShiftStatus(shiftId);
+      
+      // If settled, mark deposit as received
+      if (result.status === 'settled') {
+        receivedDeposits[shiftId] = true;
+      }
+      
       return `💱 **Shift Status: ${result.status.toUpperCase()}**\n\n` +
         `• Deposit: ${result.depositAmount}\n` +
         `• Settlement: ${result.settleAmount}\n\n` +
@@ -136,32 +151,71 @@ function processRequest(userMessage: string): string {
     let response = `📋 **Your Smart Payment Links**\n\n`;
     links.forEach((link, i) => {
       const icon = link.type === 'escrow' ? '🔒' : link.type === 'split' ? '📊' : '💸';
-      const statusIcon = link.status === 'settled' ? '✅' : link.status === 'condition_pending' ? '⏳' : '📭';
+      const statusIcon = link.status === 'settled' ? '✅' : link.status === 'deposit_received' ? '💰' : link.status === 'condition_pending' ? '⏳' : '📭';
       response += `${i + 1}. ${icon} **${link.label}**\n`;
       response += `   Type: ${link.type} | Amount: ${link.amount}\n`;
-      response += `   Status: ${statusIcon} ${link.status.replace('_', ' ')}\n\n`;
+      response += `   Status: ${statusIcon} ${link.status.replace(/_/g, ' ')}\n\n`;
     });
     return response;
   }
   
-  // Release escrow
+  // Release escrow - WITH PROPER CHECKS
   if (lowerMessage.includes('release') || lowerMessage.includes('escrow')) {
+    // Check which link they're trying to release
+    const links = getSmartLinks();
+    const escrowLink = links.find(l => l.type === 'escrow');
+    
+    if (!escrowLink) {
+      return `❌ **No Escrow Links Found**\n\nYou don't have any escrow payment links to release.`;
+    }
+    
+    // Check 1: Has deposit been received?
+    if (escrowLink.status === 'awaiting_deposit' || escrowLink.status === 'condition_pending') {
+      const hasDeposit = Object.values(receivedDeposits).some(v => v);
+      
+      if (!hasDeposit) {
+        return `⚠️ **Cannot Release Escrow**\n\n` +
+          `**Reason:** No deposit has been received yet.\n\n` +
+          `📋 **Escrow Link:** ${escrowLink.label}\n` +
+          `💰 **Expected Amount:** ${escrowLink.amount}\n` +
+          `📭 **Status:** Awaiting Deposit\n\n` +
+          `The payer needs to send funds to the deposit address first. Once SideShift confirms the deposit, and the delivery condition is verified, I can release the funds.`;
+      }
+    }
+    
+    // Check 2: Has condition been verified?
+    const hasVerifiedCondition = Object.values(verifiedConditions).some(v => v);
+    
+    if (!hasVerifiedCondition) {
+      return `⚠️ **Cannot Release Escrow**\n\n` +
+        `**Reason:** Escrow condition not yet verified.\n\n` +
+        `📋 **Escrow Link:** ${escrowLink.label}\n` +
+        `🔒 **Condition:** Delivery verification required\n\n` +
+        `Please ask me to check the delivery status first:\n` +
+        `→ "Check delivery status for WIN123456"`;
+    }
+    
+    // Both conditions met - can release!
     const txHash = `0x${Math.random().toString(16).slice(2, 10)}...${Math.random().toString(16).slice(2, 6)}`;
     return `✅ **Escrow Released Successfully!**\n\n` +
-      `• Amount: 200 USDC\n` +
+      `All conditions verified:\n` +
+      `✓ Deposit received: ${escrowLink.amount}\n` +
+      `✓ Delivery condition: Verified\n\n` +
+      `**Transaction Details:**\n` +
+      `• Amount: ${escrowLink.amount}\n` +
       `• Recipient: 0x742d...5f3a\n` +
       `• Transaction: ${txHash}\n\n` +
-      `Funds have been transferred to the recipient's wallet. The payment link has been marked as completed.`;
+      `💸 Funds have been transferred to the recipient's wallet.`;
   }
   
   // Auto-release for direct payments
   if (lowerMessage.includes('auto') || lowerMessage.includes('direct')) {
-    const txHash = `0x${Math.random().toString(16).slice(2, 10)}...${Math.random().toString(16).slice(2, 6)}`;
-    return `✅ **Auto-Release Complete!**\n\n` +
-      `Direct payment detected and automatically released.\n\n` +
-      `• Amount: 50 USDC\n` +
-      `• Transaction: ${txHash}\n` +
-      `• Time: ${new Date().toLocaleTimeString()}`;
+    return `ℹ️ **Auto-Release Information**\n\n` +
+      `For **Direct** payment links, funds are released automatically when:\n\n` +
+      `1. ✅ Deposit is received at the deposit address\n` +
+      `2. ✅ SideShift converts to USDC\n` +
+      `3. ✅ USDC arrives in your Smart Account\n\n` +
+      `No manual action needed! I'll notify you when a payment is processed.`;
   }
   
   // Monitor shifts
@@ -174,14 +228,27 @@ function processRequest(userMessage: string): string {
       `I'll notify you when any status changes occur.`;
   }
   
+  // Simulate receiving a deposit (for demo purposes)
+  if (lowerMessage.includes('simulate') && lowerMessage.includes('deposit')) {
+    receivedDeposits['demo'] = true;
+    return `💰 **Demo: Deposit Simulated!**\n\n` +
+      `For demo purposes, I've recorded a deposit as received.\n\n` +
+      `Now you can:\n` +
+      `1. Check delivery: "Check delivery status for WIN123456"\n` +
+      `2. Then release: "Release the escrow"\n\n` +
+      `In production, this happens automatically when SideShift confirms a deposit.`;
+  }
+  
   // Help / default response
   return `👋 **Hi! I'm the ShiftStream AI Agent.**\n\n` +
     `I can help you with:\n\n` +
     `📦 **Check Delivery** - "Check delivery status for WIN123456"\n` +
     `💱 **Shift Status** - "What's the status of shift done12345"\n` +
     `📋 **View Links** - "What payment links do I have?"\n` +
-    `🔓 **Release Escrow** - "Release the escrow for Logo Design"\n` +
+    `🔓 **Release Escrow** - "Release the escrow"\n` +
     `👁️ **Monitor** - "Monitor my shifts"\n\n` +
+    `**For Demo:**\n` +
+    `💰 **Simulate Deposit** - "Simulate a deposit" (to test escrow flow)\n\n` +
     `What would you like me to help you with?`;
 }
 
