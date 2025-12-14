@@ -54,24 +54,48 @@ export function AgentLogsPanel() {
       const response = await fetch('/api/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [...messages, userMessage] }),
+        body: JSON.stringify({ 
+          messages: [...messages, userMessage].map(m => ({
+            role: m.role,
+            content: m.content,
+          }))
+        }),
       });
 
-      if (!response.ok) throw new Error('Failed to get response');
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to get response');
+      }
       
-      const text = await response.text();
+      // Read streaming response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+      
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          fullText += decoder.decode(value, { stream: true });
+        }
+      } else {
+        fullText = await response.text();
+      }
+      
+      // Clean up the response text (remove any streaming artifacts)
+      const cleanText = fullText.trim();
       
       const assistantMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: text,
+        content: cleanText || 'I processed your request.',
       };
       
       setMessages(prev => [...prev, assistantMessage]);
       
       addAgentLog({
         type: 'success',
-        message: `✨ ${text.slice(0, 100)}${text.length > 100 ? '...' : ''}`,
+        message: `✨ ${cleanText.slice(0, 100)}${cleanText.length > 100 ? '...' : ''}`,
       });
     } catch (error) {
       addAgentLog({

@@ -10,12 +10,11 @@ import {
   Copy,
   ExternalLink,
   Loader2,
-  QrCode,
   RefreshCw,
   Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
-import { Button, Card, Badge, CopyableAddress, AmountDisplay, LogoLink } from '@/components/ui';
+import { Button, Card, Badge, CopyableAddress, AmountDisplay, LogoLink, QRCode } from '@/components/ui';
 import { NetworkBadge } from '@/components/ui/Crypto';
 import { FlowStepper } from '@/components/ui/Stepper';
 import { sideShiftClient } from '@/lib/sideshift';
@@ -232,12 +231,12 @@ function PayPageContent() {
                         Scan with your mobile wallet app
                       </p>
                       <div className="flex justify-center">
-                        <div className="w-40 h-40 rounded-xl bg-white p-3 flex items-center justify-center">
-                          <div className="text-center text-slate-900">
-                            <QrCode className="w-20 h-20 mx-auto text-slate-600" />
-                            <p className="text-[10px] mt-1 text-slate-500">Scan to pay</p>
-                          </div>
-                        </div>
+                        <QRCode
+                          value={shift.depositAddress}
+                          size={140}
+                          showDownload={true}
+                          showCopy={false}
+                        />
                       </div>
                     </div>
 
