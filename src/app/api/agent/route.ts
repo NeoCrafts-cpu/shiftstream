@@ -1,310 +1,234 @@
 import { groq } from '@ai-sdk/groq';
 import { generateText } from 'ai';
-import { z } from 'zod';
 import { NextResponse } from 'next/server';
 
 // Allow responses up to 30 seconds
 export const maxDuration = 30;
 
-// Link types for auto-release logic
-const LINK_TYPES = {
-  DIRECT: 'direct',    // Simple swap - auto-release immediately
-  ESCROW: 'escrow',    // Escrow - requires condition verification
-  SPLIT: 'split',      // Split - distribute to multiple recipients
-};
-
 // Mock delivery status check
 function checkDeliveryStatus(trackingNumber: string): {
   status: 'DELIVERED' | 'IN_TRANSIT' | 'NOT_FOUND';
   details: string;
+  canRelease: boolean;
 } {
-  // Mock logic: tracking numbers starting with "WIN" are delivered
   if (trackingNumber.toUpperCase().startsWith('WIN')) {
     return {
       status: 'DELIVERED',
-      details: `Package ${trackingNumber} has been delivered successfully.`,
+      details: `Package ${trackingNumber} has been delivered successfully on ${new Date().toLocaleDateString()}.`,
+      canRelease: true,
     };
   } else if (trackingNumber.toUpperCase().startsWith('SHIP')) {
     return {
       status: 'IN_TRANSIT',
       details: `Package ${trackingNumber} is currently in transit. Expected delivery in 2-3 days.`,
+      canRelease: false,
     };
   }
   return {
     status: 'NOT_FOUND',
     details: `No tracking information found for ${trackingNumber}.`,
+    canRelease: false,
   };
 }
 
-// Mock SideShift status check
+// Mock shift status check
 function checkShiftStatus(shiftId: string): {
   status: string;
-  depositAmount?: string;
-  settleAmount?: string;
+  depositAmount: string;
+  settleAmount: string;
+  explanation: string;
 } {
-  // In production, this would call the SideShift API
-  // For demo, return mock data based on shift ID patterns
-  
-  // IDs starting with "done" are settled
-  if (shiftId.toLowerCase().startsWith('done')) {
+  if (shiftId.toLowerCase().includes('done') || shiftId.toLowerCase().includes('settled')) {
     return {
       status: 'settled',
-      depositAmount: '0.001',
-      settleAmount: '50.25',
+      depositAmount: '0.05 ETH',
+      settleAmount: '125.50 USDC',
+      explanation: '✅ Deposit received and converted. Funds are ready in your Smart Account.',
     };
   }
-  
-  // IDs starting with "proc" are processing
-  if (shiftId.toLowerCase().startsWith('proc')) {
+  if (shiftId.toLowerCase().includes('proc')) {
     return {
       status: 'processing',
-      depositAmount: '0.001',
+      depositAmount: '0.05 ETH',
+      settleAmount: 'Converting...',
+      explanation: '⏳ Your deposit is being converted to USDC. This usually takes 1-5 minutes.',
     };
   }
-  
-  // Default: waiting for deposit
   return {
     status: 'waiting',
+    depositAmount: 'Pending',
+    settleAmount: 'Pending',
+    explanation: '⏳ Waiting for deposit. Send crypto to the deposit address.',
   };
 }
 
-// Mock Smart Link data retrieval
-function getSmartLinkData(linkId: string): {
+// Mock smart links data
+function getSmartLinks(): Array<{
+  id: string;
+  label: string;
   type: string;
-  recipient: string;
+  amount: string;
   status: string;
-  amount?: string;
-  escrowCondition?: { type: string; trackingNumber?: string };
-  splitConfig?: Array<{ address: string; percentage: number }>;
-} {
-  // In production, this would fetch from your database
-  // For demo, return mock data based on link ID patterns
-  
-  if (linkId.toLowerCase().includes('escrow')) {
-    return {
-      type: LINK_TYPES.ESCROW,
-      recipient: '0x742d35Cc6634C0532925a3b844Bc9e7595f...', 
+  createdAt: string;
+}> {
+  return [
+    {
+      id: 'link_escrow_001',
+      label: 'Logo Design Payment',
+      type: 'escrow',
+      amount: '200 USDC',
       status: 'condition_pending',
-      amount: '100.00',
-      escrowCondition: { type: 'delivery', trackingNumber: 'WIN123456' },
-    };
+      createdAt: 'Dec 10, 2025',
+    },
+    {
+      id: 'link_direct_002',
+      label: 'Freelance Payment',
+      type: 'direct',
+      amount: '50 USDC',
+      status: 'awaiting_deposit',
+      createdAt: 'Dec 12, 2025',
+    },
+    {
+      id: 'link_split_003',
+      label: 'Team Revenue Split',
+      type: 'split',
+      amount: '1000 USDC',
+      status: 'settled',
+      createdAt: 'Dec 8, 2025',
+    },
+  ];
+}
+
+// Parse user intent and execute actions
+function processRequest(userMessage: string): string {
+  const lowerMessage = userMessage.toLowerCase();
+  
+  // Check delivery status
+  if (lowerMessage.includes('delivery') || lowerMessage.includes('tracking') || lowerMessage.includes('check')) {
+    const trackingMatch = userMessage.match(/[A-Z]{2,}[0-9]+/i);
+    if (trackingMatch) {
+      const result = checkDeliveryStatus(trackingMatch[0]);
+      if (result.status === 'DELIVERED') {
+        return `📦 **Delivery Verified!**\n\n${result.details}\n\n✅ Escrow release condition has been met. The funds can now be released to the recipient.\n\nWould you like me to release the escrowed funds?`;
+      } else if (result.status === 'IN_TRANSIT') {
+        return `📦 **Package In Transit**\n\n${result.details}\n\n⏳ Escrow funds will remain locked until delivery is confirmed.`;
+      } else {
+        return `❌ **Tracking Not Found**\n\n${result.details}\n\nPlease verify the tracking number and try again.`;
+      }
+    }
   }
   
-  if (linkId.toLowerCase().includes('split')) {
-    return {
-      type: LINK_TYPES.SPLIT,
-      recipient: 'multiple',
-      status: 'deposit_received',
-      amount: '1000.00',
-      splitConfig: [
-        { address: '0xAAA...', percentage: 50 },
-        { address: '0xBBB...', percentage: 30 },
-        { address: '0xCCC...', percentage: 20 },
-      ],
-    };
+  // Check shift/payment status
+  if (lowerMessage.includes('shift') || lowerMessage.includes('status') || lowerMessage.includes('payment')) {
+    const shiftMatch = userMessage.match(/[a-z]+[0-9]+/i);
+    if (shiftMatch) {
+      const result = checkShiftStatus(shiftMatch[0]);
+      return `💱 **Shift Status: ${result.status.toUpperCase()}**\n\n` +
+        `• Deposit: ${result.depositAmount}\n` +
+        `• Settlement: ${result.settleAmount}\n\n` +
+        `${result.explanation}`;
+    }
   }
   
-  // Default: Direct/Simple swap
-  return {
-    type: LINK_TYPES.DIRECT,
-    recipient: '0x742d35Cc6634C0532925a3b844Bc9e7595f...',
-    status: 'awaiting_deposit',
-    amount: '50.00',
-  };
+  // List payment links
+  if (lowerMessage.includes('links') || lowerMessage.includes('payments') || (lowerMessage.includes('what') && lowerMessage.includes('have'))) {
+    const links = getSmartLinks();
+    let response = `📋 **Your Smart Payment Links**\n\n`;
+    links.forEach((link, i) => {
+      const icon = link.type === 'escrow' ? '🔒' : link.type === 'split' ? '📊' : '💸';
+      const statusIcon = link.status === 'settled' ? '✅' : link.status === 'condition_pending' ? '⏳' : '📭';
+      response += `${i + 1}. ${icon} **${link.label}**\n`;
+      response += `   Type: ${link.type} | Amount: ${link.amount}\n`;
+      response += `   Status: ${statusIcon} ${link.status.replace('_', ' ')}\n\n`;
+    });
+    return response;
+  }
+  
+  // Release escrow
+  if (lowerMessage.includes('release') || lowerMessage.includes('escrow')) {
+    const txHash = `0x${Math.random().toString(16).slice(2, 10)}...${Math.random().toString(16).slice(2, 6)}`;
+    return `✅ **Escrow Released Successfully!**\n\n` +
+      `• Amount: 200 USDC\n` +
+      `• Recipient: 0x742d...5f3a\n` +
+      `• Transaction: ${txHash}\n\n` +
+      `Funds have been transferred to the recipient's wallet. The payment link has been marked as completed.`;
+  }
+  
+  // Auto-release for direct payments
+  if (lowerMessage.includes('auto') || lowerMessage.includes('direct')) {
+    const txHash = `0x${Math.random().toString(16).slice(2, 10)}...${Math.random().toString(16).slice(2, 6)}`;
+    return `✅ **Auto-Release Complete!**\n\n` +
+      `Direct payment detected and automatically released.\n\n` +
+      `• Amount: 50 USDC\n` +
+      `• Transaction: ${txHash}\n` +
+      `• Time: ${new Date().toLocaleTimeString()}`;
+  }
+  
+  // Monitor shifts
+  if (lowerMessage.includes('monitor')) {
+    return `👁️ **Shift Monitoring Active**\n\n` +
+      `I'm now monitoring your active shifts for incoming deposits.\n\n` +
+      `Currently tracking:\n` +
+      `• 2 pending deposits\n` +
+      `• 1 escrow awaiting condition\n\n` +
+      `I'll notify you when any status changes occur.`;
+  }
+  
+  // Help / default response
+  return `👋 **Hi! I'm the ShiftStream AI Agent.**\n\n` +
+    `I can help you with:\n\n` +
+    `📦 **Check Delivery** - "Check delivery status for WIN123456"\n` +
+    `💱 **Shift Status** - "What's the status of shift done12345"\n` +
+    `📋 **View Links** - "What payment links do I have?"\n` +
+    `🔓 **Release Escrow** - "Release the escrow for Logo Design"\n` +
+    `👁️ **Monitor** - "Monitor my shifts"\n\n` +
+    `What would you like me to help you with?`;
 }
 
 export async function POST(req: Request) {
   try {
     const { messages } = await req.json();
-
-    const result = await generateText({
-      model: groq('llama-3.3-70b-versatile'),
-      system: `You are the ShiftStream Auto-Settlement Agent. Your job is to:
-1. Monitor SideShift deposits and provide status updates
-2. Verify delivery conditions for escrow releases
-3. Help users understand their Smart Link status
-4. Execute fund releases when conditions are met
-
-**IMPORTANT - AUTO-RELEASE LOGIC:**
-- For DIRECT/SIMPLE SWAP links: Release funds AUTOMATICALLY once SideShift status is "settled". No conditions needed.
-- For ESCROW links: Only release funds after verifying the escrow condition (e.g., delivery verified).
-- For SPLIT links: Distribute funds to all recipients according to percentages once deposit settles.
-
-When a user asks about releasing funds for a simple swap:
-1. First check the shift status using checkShiftStatus
-2. If status is "settled", immediately call releaseFunds or processAutoRelease
-3. Confirm the release to the user
-
-You have access to tools to check delivery status, shift status, and execute releases. Use them proactively.
-
-Be concise, professional, and helpful. Use emojis sparingly to make responses engaging.
-When funds are auto-released for a simple swap, confirm: "✅ Funds auto-released! [amount] USDC sent to your wallet."`,
-    messages,
-    tools: {
-      checkDelivery: {
-        description: 'Check the delivery status of a package by tracking number. Use this when a user wants to verify if their escrow condition (delivery) has been met.',
-        inputSchema: z.object({
-          trackingNumber: z.string().describe('The shipping tracking number to check'),
-        }),
-        execute: async ({ trackingNumber }: { trackingNumber: string }) => {
-          const result = checkDeliveryStatus(trackingNumber);
-          return {
-            trackingNumber,
-            ...result,
-            canReleaseFunds: result.status === 'DELIVERED',
-          };
-        },
-      },
-      checkShiftStatus: {
-        description: 'Check the status of a SideShift order. Use this when a user wants to know the status of their deposit or payment. For simple swaps, if status is "settled", funds should be auto-released.',
-        inputSchema: z.object({
-          shiftId: z.string().describe('The SideShift order ID to check'),
-        }),
-        execute: async ({ shiftId }: { shiftId: string }) => {
-          const result = checkShiftStatus(shiftId);
-          return {
-            shiftId,
-            ...result,
-            statusExplanation: getStatusExplanation(result.status),
-            readyForRelease: result.status === 'settled',
-          };
-        },
-      },
-      getSmartLink: {
-        description: 'Get details about a Smart Link including its type (direct, escrow, split), status, and configuration. Use this to determine how to process the payment.',
-        inputSchema: z.object({
-          linkId: z.string().describe('The Smart Link ID'),
-        }),
-        execute: async ({ linkId }: { linkId: string }) => {
-          const linkData = getSmartLinkData(linkId);
-          return {
-            linkId,
-            ...linkData,
-            autoReleaseEnabled: linkData.type === LINK_TYPES.DIRECT,
-            requiresConditionCheck: linkData.type === LINK_TYPES.ESCROW,
-            requiresSplitDistribution: linkData.type === LINK_TYPES.SPLIT,
-          };
-        },
-      },
-      processAutoRelease: {
-        description: 'Automatically release funds for a DIRECT/SIMPLE SWAP link. Use this when SideShift status is "settled" and the link type is "direct". This is the preferred method for simple swaps.',
-        inputSchema: z.object({
-          linkId: z.string().describe('The Smart Link ID'),
-          shiftId: z.string().describe('The SideShift order ID'),
-          amount: z.string().describe('The settled amount in USDC'),
-          recipient: z.string().describe('The recipient wallet address'),
-        }),
-        execute: async ({ linkId, shiftId, amount, recipient }: { linkId: string; shiftId: string; amount: string; recipient: string }) => {
-          // In production, this triggers the actual auto-release via ZeroDev Session Key
-          return {
-            success: true,
-            type: 'AUTO_RELEASE',
-            linkId,
-            shiftId,
-            recipient,
-            amount,
-            transactionHash: `0x${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`,
-            message: `✅ Auto-release complete! ${amount} USDC sent to ${recipient.slice(0, 10)}...`,
-            timestamp: new Date().toISOString(),
-          };
-        },
-      },
-      releaseFunds: {
-        description: 'Release escrowed funds to the recipient after condition verification. Use this for ESCROW links after verifying delivery or other conditions.',
-        inputSchema: z.object({
-          linkId: z.string().describe('The Smart Link ID'),
-          recipient: z.string().describe('The recipient wallet address'),
-          amount: z.string().describe('The amount to release in USDC'),
-          reason: z.string().describe('The reason for releasing funds (e.g., "Delivery verified", "Manual approval")'),
-        }),
-        execute: async ({ linkId, recipient, amount, reason }: { linkId: string; recipient: string; amount: string; reason: string }) => {
-          // In production, this would trigger the actual fund release via Session Key
-          return {
-            success: true,
-            type: 'ESCROW_RELEASE',
-            linkId,
-            recipient,
-            amount,
-            reason,
-            transactionHash: `0x${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`,
-            message: `Escrow released: ${amount} USDC to ${recipient.slice(0, 10)}... Reason: ${reason}`,
-          };
-        },
-      },
-      distributeSplit: {
-        description: 'Distribute funds according to a split configuration. Use this for SPLIT links to send funds to multiple recipients based on their percentage shares.',
-        inputSchema: z.object({
-          linkId: z.string().describe('The Smart Link ID'),
-          totalAmount: z.string().describe('The total amount to distribute in USDC'),
-          recipients: z.array(z.object({
-            address: z.string(),
-            percentage: z.number(),
-          })).describe('Array of recipients with their percentage shares'),
-        }),
-        execute: async ({ linkId, totalAmount, recipients }: { linkId: string; totalAmount: string; recipients: Array<{ address: string; percentage: number }> }) => {
-          // Calculate individual amounts
-          const distributions = recipients.map(r => ({
-            address: r.address,
-            percentage: r.percentage,
-            amount: ((parseFloat(totalAmount) * r.percentage) / 100).toFixed(2),
-          }));
-          
-          return {
-            success: true,
-            type: 'SPLIT_DISTRIBUTION',
-            linkId,
-            totalAmount,
-            distributions,
-            transactionHash: `0x${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`,
-            message: `✅ Split complete! ${totalAmount} USDC distributed to ${recipients.length} recipients`,
-          };
-        },
-      },
-    },
-  });
-
-  // Combine text and tool results into a response
-  let responseText = result.text || '';
-  
-  // If there are tool results, include them in the response
-  if (result.toolResults && result.toolResults.length > 0) {
-    const toolOutputs = result.toolResults.map((tr) => {
-      // Access the result property safely
-      const toolResult = (tr as unknown as { result: Record<string, unknown> }).result;
-      if (toolResult && typeof toolResult === 'object' && 'message' in toolResult) {
-        return toolResult.message as string;
-      }
-      return JSON.stringify(toolResult, null, 2);
-    }).join('\n\n');
     
-    if (!responseText) {
-      responseText = toolOutputs;
-    } else {
-      responseText = `${responseText}\n\n${toolOutputs}`;
+    // Get the last user message
+    const lastUserMessage = messages
+      .filter((m: { role: string }) => m.role === 'user')
+      .pop();
+    
+    if (!lastUserMessage) {
+      return NextResponse.json({ 
+        response: "I didn't receive a message. How can I help you?" 
+      });
     }
-  }
+    
+    // Process the request with our mock functions
+    const directResponse = processRequest(lastUserMessage.content);
+    
+    // Optionally enhance with AI for more natural conversation
+    try {
+      const result = await generateText({
+        model: groq('llama-3.3-70b-versatile'),
+        system: `You are the ShiftStream AI Agent, a helpful assistant for crypto payment management.
+        
+You've already processed the user's request and have this result:
+${directResponse}
 
-  return NextResponse.json({ response: responseText || 'I processed your request but have no additional information to share.' });
+Your job is to present this information in a friendly, conversational way. Keep the key information but make it sound natural.
+Do NOT add any new information or make up data. Just present what's given above in a friendly manner.
+Keep your response concise and use markdown formatting with emojis.`,
+        messages: [{ role: 'user', content: lastUserMessage.content }],
+      });
+      
+      return NextResponse.json({ response: result.text || directResponse });
+    } catch {
+      // If AI fails, return the direct response
+      return NextResponse.json({ response: directResponse });
+    }
+    
   } catch (error) {
     console.error('Agent error:', error);
     return NextResponse.json(
-      { response: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}` },
+      { response: `❌ Sorry, I encountered an error. Please try again.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}` },
       { status: 500 }
     );
   }
-}
-
-function getStatusExplanation(status: string): string {
-  const explanations: Record<string, string> = {
-    pending: 'Your shift order has been created and is waiting to be processed.',
-    waiting: 'Waiting for your deposit. Send the specified cryptocurrency to the deposit address.',
-    processing: 'Your deposit has been received and is being processed.',
-    settling: 'Funds are being converted and sent to your Smart Account.',
-    settled: 'Success! Funds have been deposited into your Smart Account.',
-    refund: 'A refund has been initiated.',
-    refunding: 'Your refund is being processed.',
-    refunded: 'Your deposit has been refunded to the original address.',
-    expired: 'This shift order has expired. Please create a new one.',
-  };
-  return explanations[status] || 'Unknown status';
 }
