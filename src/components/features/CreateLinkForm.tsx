@@ -34,6 +34,7 @@ import { sideShiftClient } from '@/lib/sideshift';
 import { LINK_TYPES, SETTLE_COIN, SETTLE_NETWORK } from '@/lib/constants';
 import { useSideShiftCoinsQuick } from '@/lib/hooks';
 import { SettlementSelector, type SettleOption } from './SettlementSelector';
+import { RecurringSelector, DEFAULT_RECURRING_CONFIG, type RecurringConfig } from './RecurringSelector';
 import type { SmartLink, SplitRecipient, EscrowCondition } from '@/lib/types';
 import { generateId } from '@/lib/utils';
 
@@ -64,6 +65,9 @@ export function CreateLinkForm() {
     { address: '' as `0x${string}`, percentage: 50, label: 'Recipient 1' },
     { address: '' as `0x${string}`, percentage: 50, label: 'Recipient 2' },
   ]);
+
+  // Recurring payment state
+  const [recurringConfig, setRecurringConfig] = useState<RecurringConfig>(DEFAULT_RECURRING_CONFIG);
 
   // Filter coins based on search
   const filteredCoins = useMemo(() => {
@@ -521,6 +525,12 @@ export function CreateLinkForm() {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Recurring Payment Option */}
+          <RecurringSelector
+            value={recurringConfig}
+            onChange={setRecurringConfig}
+          />
 
           {/* Create Button */}
           <Button

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-import { ArrowLeft, Zap, Bot, Settings, LogOut, Link2, History } from 'lucide-react';
+import { ArrowLeft, Zap, Bot, Settings, LogOut, Link2, History, Webhook, Receipt } from 'lucide-react';
 import { Button, ToastContainer, LogoLink, Badge } from '@/components/ui';
 import {
   SmartAccountCard,
@@ -11,11 +11,14 @@ import {
   SmartLinksList,
   AgentLogsPanel,
   TransactionHistory,
+  WebhookManager,
+  InvoiceGenerator,
+  WalletConnectButton,
 } from '@/components/features';
 import { useStore } from '@/lib/store';
 import { zeroDevClient } from '@/lib/zerodev';
 
-type TabType = 'links' | 'history';
+type TabType = 'links' | 'history' | 'webhooks';
 
 export default function DashboardPage() {
   const { smartAccount, setSmartAccount, addToast, smartLinks } = useStore();
@@ -33,7 +36,8 @@ export default function DashboardPage() {
 
   const tabs = [
     { id: 'links' as TabType, label: 'Smart Links', icon: Link2, count: smartLinks.length },
-    { id: 'history' as TabType, label: 'Transaction History', icon: History },
+    { id: 'history' as TabType, label: 'Transactions', icon: History },
+    { id: 'webhooks' as TabType, label: 'Webhooks', icon: Webhook },
   ];
 
   return (
@@ -48,7 +52,9 @@ export default function DashboardPage() {
           <div className="flex items-center gap-3">
             {smartAccount && (
               <>
+                <InvoiceGenerator />
                 <CreateLinkForm />
+                <WalletConnectButton />
                 <motion.div
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
@@ -82,7 +88,7 @@ export default function DashboardPage() {
               <div>
                 <h1 className="text-2xl font-bold text-white">Dashboard</h1>
                 <p className="text-white/60 text-sm">
-                  Manage your Smart Links and monitor settlements
+                  Manage your Smart Links, invoices, and monitor settlements
                 </p>
               </div>
             </motion.div>
@@ -134,6 +140,7 @@ export default function DashboardPage() {
             >
               {activeTab === 'links' && <SmartLinksList />}
               {activeTab === 'history' && <TransactionHistory />}
+              {activeTab === 'webhooks' && <WebhookManager />}
             </motion.div>
           </div>
 

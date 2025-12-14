@@ -30,6 +30,7 @@ import {
   Modal,
 } from '@/components/ui';
 import { QRCodeDisplay } from '@/components/ui/QRCode';
+import { CompactExpiryTimer } from './PaymentExpiryTimer';
 import { useStore } from '@/lib/store';
 import { sideShiftClient } from '@/lib/sideshift';
 import { formatDate, getStatusColor, formatAmount, shortenAddress, copyToClipboard } from '@/lib/utils';
@@ -281,6 +282,19 @@ function SmartLinkCard({ link, index }: { link: SmartLink; index: number }) {
               {getStatusLabel(link.status)}
             </Badge>
           </div>
+
+          {/* Expiry Timer for active links */}
+          {isActive && link.status === 'awaiting_deposit' && link.createdAt && (
+            <div className="mb-4 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-400" />
+                <span className="text-sm text-amber-400">Expires in</span>
+              </div>
+              <CompactExpiryTimer 
+                expiresAt={new Date(new Date(link.createdAt).getTime() + 24 * 60 * 60 * 1000)} 
+              />
+            </div>
+          )}
 
           {/* Deposit Address */}
           {link.depositAddress && (
