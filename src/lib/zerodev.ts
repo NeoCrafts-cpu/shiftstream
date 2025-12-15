@@ -66,6 +66,7 @@ export class ZeroDevClient {
       if (storedKey) {
         this.privateKey = storedKey as `0x${string}`;
         this.accountAddress = computeCounterfactualAddress(this.privateKey);
+        this.isInitialized = true; // Mark as initialized if we have a stored key
       }
 
       const storedSessions = localStorage.getItem('shiftstream_session_keys');

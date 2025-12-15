@@ -69,6 +69,15 @@ export function SmartAccountCard() {
   };
 
   const handleCreateSession = async () => {
+    if (!smartAccount) {
+      addToast({
+        type: 'error',
+        title: 'No Smart Account',
+        description: 'Please create a Smart Account first',
+      });
+      return;
+    }
+    
     setIsCreatingSession(true);
     try {
       addAgentLog({
@@ -76,6 +85,9 @@ export function SmartAccountCard() {
         message: '🔑 Generating Session Key with permissions...',
       });
 
+      // Ensure the smart account is initialized in the client
+      await zeroDevClient.createSmartAccount();
+      
       const sessionKey = await zeroDevClient.createSessionKey([
         {
           target: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // USDC on Base
